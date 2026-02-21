@@ -1,58 +1,64 @@
-import { FadeInBlock } from "@/components/GsapAnimations";
-import { getPosts } from "@/lib/wp";
-import Link from "next/link";
+import { getPostBySlug, getPosts } from "@/lib/wp";
 import { format } from "date-fns";
+import { notFound } from "next/navigation";
+import { Metadata } from "next";
 
-export const revalidate = 3600;
-
-export const metadata = {
-    title: "Writing Archive",
-    description: "Essays, thoughts, and reflections on history.",
+type Props = {
+    params: { slug: string };
 };
 
-export default async function ArchivePage() {
-    const posts = await getPosts();
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+    const post = await getPostBySlug(params.slug);
+    if (!post) return { title: "Not Found" };
+    return {
+        title: post.title.rendered,
+        description: post.excerpt.rendered.replace(/<[^>]+>/g, "").slice(0, 160),
+    };
+}
+
+export async function generateStaticParams() {
+    try {
+        const posts = await getPosts();
+        // Safety check: if API was dead, return empty array so build doesn't crash mapping over null or undefined
+        if (!posts || !Array.isArray(posts)) return [];
+
+        return posts.map((post) => ({
+            slug: post.slug,
+        }));
+    } catch (error) {
+        console.warn("[Build Warning] Failed to generate static params. API might be Down.", error);
+        return [];
+    }
+}
+
+export default async function SinglePostPage({ params }: Props) {
+    const post = await getPostBySlug(params.slug);
+
+    if (!post) {
+        notFound();
+    }
 
     return (
-        <div className="pt-24 lg:pt-32 pb-24">
-            <FadeInBlock>
-                <h1 className="text-4xl sm:text-6xl font-serif mb-16 border-b border-primary/10 pb-8">
-                    Writing Archive
-                </h1>
-            </FadeInBlock>
+        <article className="pt-24 lg:pt-32 pb-24 max-w-3xl mx-auto">
+            <header className="mb-12 text-center">
+                <time className="text-sm font-semibold tracking-widest text-secondary uppercase mb-6 block">
+                    {format(new Date(post.date), "MMMM d, yyyy")}
+                </time>
+                <h1
+                    className="text-4xl sm:text-5xl lg:text-6xl font-serif text-primary mb-8 leading-tight"
+                    dangerouslySetInnerHTML={{ __html: post.title.rendered }}
+                />
+                <div className="w-24 h-[1px] bg-primary/20 mx-auto"></div>
+            </header>
 
-            <div className="space-y-12">
-                {posts.length > 0 ? (
-                    posts.map((post, index) => (
-                        <FadeInBlock key={post.id} delay={index * 0.1}>
-                            <article className="border border-primary/10 bg-white/30 p-8 hover:bg-white/50 transition-colors duration-500">
-                                <time className="text-sm font-semibold tracking-widest text-secondary uppercase mb-4 block">
-                                    {format(new Date(post.date), "MMMM d, yyyy")}
-                                </time>
-                                <h2 className="text-3xl font-serif mb-4 leading-snug">
-                                    <Link href={`/archive/${post.slug}`} className="hover:text-secondary transition-colors">
-                                        <span dangerouslySetInnerHTML={{ __html: post.title.rendered }} />
-                                    </Link>
-                                </h2>
-                                <div
-                                    className="text-primary/70 line-clamp-3 mb-6"
-                                    dangerouslySetInnerHTML={{ __html: post.excerpt.rendered }}
-                                />
-                                <Link
-                                    href={`/archive/${post.slug}`}
-                                    className="inline-block text-sm uppercase tracking-widest font-semibold text-secondary hover:text-primary transition-colors border-b border-primary/30 hover:border-primary pb-1"
-                                >
-                                    Read Essay
-                                </Link>
-                            </article>
-                        </FadeInBlock>
-                    ))
-                ) : (
-                    <FadeInBlock delay={0.2}>
-                        <p className="text-lg text-primary/60 italic">No archive entries found. Ensure WordPress API is connected.</p>
-                    </FadeInBlock>
-                )}
-            </div>
-        </div>
+            <div
+                className="prose prose-lg prose-amber mx-auto text-primary/80 
+                   prose-headings:font-serif prose-headings:text-primary 
+                   prose-a:text-secondary hover:prose-a:text-primary prose-a:transition-colors
+                   prose-blockquote:border-secondary prose-blockquote:font-serif prose-blockquote:text-xl
+                   prose-blockquote:italic"
+                dangerouslySetInnerHTML={{ __html: post.content.rendered }}
+            />
+        </article>
     );
 }
